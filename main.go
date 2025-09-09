@@ -5,16 +5,17 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/aledeltoro/gin-dedup-middleware/dedup"
 	"github.com/aledeltoro/gin-dedup-middleware/storage"
 	"github.com/gin-gonic/gin"
 )
 
-func Deduplicate(cache storage.CacheStorage) gin.HandlerFunc {
+func Deduplicate(cache storage.CacheStorage, dedupConfig *dedup.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		fullURL := c.Request.URL.String()
-		param := c.Param("id")
+		dedupKey := dedupConfig.Fetch(c)
 
-		isDuplicateRequest, err := cache.IsSetMember(c, param, fullURL)
+		isDuplicateRequest, err := cache.IsSetMember(c, dedupKey, fullURL)
 		if err != nil {
 			log.Printf("failed performing SISMEMBER command: %s", err)
 			c.AbortWithStatusJSON(http.StatusInternalServerError, map[string]any{
@@ -32,7 +33,7 @@ func Deduplicate(cache storage.CacheStorage) gin.HandlerFunc {
 			return
 		}
 
-		err = cache.AddSet(c, param, 2*time.Minute, fullURL)
+		err = cache.AddSet(c, dedupKey, 2*time.Minute, fullURL)
 		if err != nil {
 			log.Printf("failed performing SADD command: %s", err)
 			c.AbortWithStatusJSON(http.StatusInternalServerError, map[string]any{
@@ -48,21 +49,26 @@ func main() {
 	redisCache := storage.NewRedisCache()
 
 	router := gin.Default()
-	router.Use(Deduplicate(redisCache))
 
-	router.GET("/ping/:id", func(c *gin.Context) {
-		c.JSON(http.StatusOK, map[string]any{
-			"message": "pong",
-			"id":      c.Param("id"),
+	router.GET(
+		"/ping/:id",
+		Deduplicate(redisCache, dedup.NewDeduplicationKey(dedup.WithParam, "id")),
+		func(c *gin.Context) {
+			c.JSON(http.StatusOK, map[string]any{
+				"message": "pong",
+				"id":      c.Param("id"),
+			})
 		})
-	})
 
-	router.GET("/products/:id", func(c *gin.Context) {
-		c.JSON(http.StatusOK, map[string]any{
-			"message": "we have apples!",
-			"id":      c.Param("id"),
+	router.GET(
+		"/products/:id",
+		Deduplicate(redisCache, dedup.NewDeduplicationKey(dedup.WithParam, "id")),
+		func(c *gin.Context) {
+			c.JSON(http.StatusOK, map[string]any{
+				"message": "we have apples!",
+				"id":      c.Param("id"),
+			})
 		})
-	})
 
 	router.Run(":8080")
 }
