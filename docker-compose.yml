@@ -1,0 +1,27 @@
+services:
+  api:
+    depends_on:
+      cache:
+        condition: service_healthy
+    build:
+      context: ./
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+
+  cache:
+    image: redis:8.2.1-alpine
+    restart: always
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep PONG"]
+      interval: 1s
+      timeout: 3s
+      retries: 5
+    volumes:
+      - cache:/data
+
+volumes:
+  cache:
+    driver: local
