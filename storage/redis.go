@@ -8,6 +8,10 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
+const (
+	noNewSetMembers = 0
+)
+
 type RedisCache struct {
 	client *redis.Client
 }
@@ -30,10 +34,26 @@ func NewRedisCache() CacheStorage {
 	}
 }
 
-func (r *RedisCache) AddSet(ctx context.Context, key string, member string, expire time.Duration) error {
-	return nil
+func (r *RedisCache) AddSet(ctx context.Context, key string, expire time.Duration, members ...string) error {
+	count, err := r.client.SAdd(ctx, key, members).Result()
+	if err != nil {
+		return err
+	}
+
+	if count == noNewSetMembers {
+		return nil
+	}
+
+	_, err = r.client.ExpireNX(ctx, key, expire).Result()
+
+	return err
 }
 
 func (r *RedisCache) IsSetMember(ctx context.Context, key, member string) (bool, error) {
-	return false, nil
+	isMember, err := r.client.SIsMember(ctx, key, member).Result()
+	if err != nil {
+		return false, err
+	}
+
+	return isMember, nil
 }
