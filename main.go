@@ -1,21 +1,31 @@
 package main
 
 import (
+	"log"
 	"net/http"
+	"time"
 
 	"github.com/aledeltoro/gin-dedup-middleware/storage"
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 )
 
 var deduplicatedRequests = map[string]bool{}
 
-func Deduplicate(redisCache storage.CacheStorage) gin.HandlerFunc {
+func Deduplicate(cache storage.CacheStorage) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		fullURL := c.Request.URL.String()
+		param := c.Param("id")
 
-		_, ok := deduplicatedRequests[fullURL]
-		if ok {
+		isDuplicateRequest, err := cache.IsSetMember(c, param, fullURL)
+		if err != nil {
+			log.Printf("failed performing SISMEMBER command: %s", err)
+			c.AbortWithStatusJSON(http.StatusInternalServerError, map[string]any{
+				"error": "internal server error",
+			})
+			return
+		}
+
+		if isDuplicateRequest {
 			c.AbortWithStatusJSON(http.StatusInternalServerError, map[string]any{
 				"error":     "duplicate request",
 				"full_path": fullURL,
@@ -24,7 +34,13 @@ func Deduplicate(redisCache storage.CacheStorage) gin.HandlerFunc {
 			return
 		}
 
-		deduplicatedRequests[fullURL] = true
+		err = cache.AddSet(c, param, 2*time.Minute, fullURL)
+		if err != nil {
+			log.Printf("failed performing SADD command: %s", err)
+			c.AbortWithStatusJSON(http.StatusInternalServerError, map[string]any{
+				"error": "internal server error",
+			})
+		}
 
 		c.Next()
 	}
@@ -36,10 +52,10 @@ func main() {
 	router := gin.Default()
 	router.Use(Deduplicate(redisCache))
 
-	router.GET("/ping", func(c *gin.Context) {
+	router.GET("/ping/:id", func(c *gin.Context) {
 		c.JSON(http.StatusOK, map[string]any{
-			"message":    "pong",
-			"request_id": uuid.Must(uuid.NewV7()),
+			"message": "pong",
+			"id":      c.Param("id"),
 		})
 	})
 
