@@ -9,8 +9,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-var deduplicatedRequests = map[string]bool{}
-
 func Deduplicate(cache storage.CacheStorage) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		fullURL := c.Request.URL.String()
@@ -55,6 +53,13 @@ func main() {
 	router.GET("/ping/:id", func(c *gin.Context) {
 		c.JSON(http.StatusOK, map[string]any{
 			"message": "pong",
+			"id":      c.Param("id"),
+		})
+	})
+
+	router.GET("/products/:id", func(c *gin.Context) {
+		c.JSON(http.StatusOK, map[string]any{
+			"message": "we have apples!",
 			"id":      c.Param("id"),
 		})
 	})
